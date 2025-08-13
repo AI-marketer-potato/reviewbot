@@ -54,4 +54,20 @@ vector_stores/
 
 # 테스트 파일
 test_*.py
-*_test.py 
+*_test.py
+
+# 민감한 API 키 파일들
+*.p8
+*service-account*.json
+config.py
+
+# CSV 데이터 파일들
+*.csv
+!sample_*.csv
+
+# 쿼터 추적 파일
+quota_tracker_*.json
+
+# 기타 민감한 파일들
+app_store_api_reproduction.py
+README_Apple_Support.md 

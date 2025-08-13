@@ -32,9 +32,9 @@ class ReviewBot:
             print("기존 벡터 저장소 발견. 재사용합니다.")
             # 기존 저장소 로드
             for country in Config.COUNTRIES:
-                if country.lower() in existing_stores:
+                if country.upper() in existing_stores:
                     print(f"{country} 벡터 저장소 로드 중...")
-                    self.vector_store_service.load_existing_store(country.lower())
+                    self.vector_store_service.load_existing_store(country.upper())
             
             print("기존 지식베이스 로드 완료")
             return
@@ -48,7 +48,7 @@ class ReviewBot:
         
         # 국가별 벡터 저장소 생성
         for country in Config.COUNTRIES:
-            self.vector_store_service.create_or_load_vector_store(documents, country.lower())
+            self.vector_store_service.create_or_load_vector_store(documents, country.upper())
         
         print("지식베이스 초기화 완료")
     
@@ -60,9 +60,9 @@ class ReviewBot:
             return existing_stores
         
         for country in Config.COUNTRIES:
-            store_path = f"{Config.VECTOR_STORE_PATH}/{country.lower()}_faiss"
+            store_path = f"{Config.VECTOR_STORE_PATH}/{country.upper()}_faiss"
             if os.path.exists(store_path):
-                existing_stores.append(country.lower())
+                existing_stores.append(country.upper())
         
         return existing_stores
     

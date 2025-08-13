@@ -15,9 +15,13 @@ class VectorStoreService:
             api_key=Config.OPENAI_API_KEY
         )
         self.vector_stores = {}  # 국가별 벡터 저장소
+    
+    def _normalize_country(self, country: str) -> str:
+        return (country or "").upper()
         
     def load_existing_store(self, country: str) -> Optional[FAISS]:
         """기존 벡터 저장소 로드 (오류 처리 포함)"""
+        country = self._normalize_country(country)
         store_path = f"{Config.VECTOR_STORE_PATH}/{country}_faiss"
         
         if not os.path.exists(store_path):
@@ -38,6 +42,7 @@ class VectorStoreService:
         
     def create_or_load_vector_store(self, documents: List[Document], country: str) -> FAISS:
         """벡터 저장소 생성 또는 로드"""
+        country = self._normalize_country(country)
         store_path = f"{Config.VECTOR_STORE_PATH}/{country}_faiss"
         
         # 먼저 기존 저장소 로드 시도
@@ -76,6 +81,7 @@ class VectorStoreService:
     
     def similarity_search(self, query: str, country: str, k: int = 3) -> List[Document]:
         """유사도 검색"""
+        country = self._normalize_country(country)
         if country not in self.vector_stores:
             print(f"경고: {country} 벡터 저장소가 없습니다.")
             return []
@@ -90,6 +96,7 @@ class VectorStoreService:
     
     def update_vector_store(self, new_documents: List[Document], country: str):
         """벡터 저장소 업데이트"""
+        country = self._normalize_country(country)
         country_docs = [doc for doc in new_documents if doc.metadata.get('country') == country]
         
         if not country_docs:
@@ -131,6 +138,7 @@ class VectorStoreService:
     
     def get_document_count(self, country: str) -> int:
         """특정 국가의 벡터 저장소 문서 수 반환"""
+        country = self._normalize_country(country)
         if country not in self.vector_stores:
             # 저장소가 로드되지 않은 경우 로드 시도
             self.load_existing_store(country)
@@ -167,11 +175,12 @@ class VectorStoreService:
         if os.path.exists(Config.VECTOR_STORE_PATH):
             for item in os.listdir(Config.VECTOR_STORE_PATH):
                 if item.endswith('_faiss'):
-                    country = item.replace('_faiss', '')
+                    country = item.replace('_faiss', '').upper()
                     if country not in info:
                         info[country] = {
                             "loaded": False,
                             "document_count": "Not loaded",
                             "store_type": "FAISS",
                             "embedding_model": Config.EMBEDDING_MODEL
-                        } 
+                        }
+        return info 

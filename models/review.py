@@ -12,6 +12,7 @@ class Review(BaseModel):
     country: str  # KR, US
     platform: str  # google_play, app_store
     category: Optional[str] = None  # 분류된 카테고리
+    language: Optional[str] = None  # 기기 언어 또는 검출된 언어 (예: 'ja', 'ko', 'en')
     
 class ReviewResponse(BaseModel):
     """리뷰 응답 데이터 모델"""

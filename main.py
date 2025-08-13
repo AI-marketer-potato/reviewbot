@@ -9,7 +9,9 @@ import sys
 from datetime import datetime
 from models.review import Review
 from services.review_bot import ReviewBot
+from services.app_store_client import AppStoreConnectClient
 from schedulers.update_scheduler import UpdateScheduler
+from services.google_play_client import GooglePlayConsoleClient
 
 def print_detailed_statistics(stats: dict):
     """상세 통계 정보를 보기 좋게 출력"""
@@ -106,7 +108,7 @@ def create_sample_reviews():
             rating=2,
             content="잠자기 버튼이 사라졌어요. 어디 있나요?",
             created_at=datetime.now(),
-            country="KR",
+            country="KOR",
             platform="google_play"
         ),
         Review(
@@ -115,7 +117,7 @@ def create_sample_reviews():
             rating=5,
             content="앱이 정말 좋아요! 걸으면서 포인트도 모으고 재미있네요",
             created_at=datetime.now(),
-            country="KR",
+            country="KOR",
             platform="app_store"
         ),
         Review(
@@ -124,7 +126,7 @@ def create_sample_reviews():
             rating=1,
             content="This app is not voiceover friendly. Hard to use for blind users.",
             created_at=datetime.now(),
-            country="US",
+            country="USA",
             platform="google_play"
         ),
         Review(
@@ -133,7 +135,7 @@ def create_sample_reviews():
             rating=3,
             content="광고를 봤는데 포인트가 안 들어와요. 확인해주세요.",
             created_at=datetime.now(),
-            country="KR", 
+            country="KOR", 
             platform="google_play"
         ),
         Review(
@@ -142,7 +144,7 @@ def create_sample_reviews():
             rating=4,
             content="Great app! But sometimes it crashes when I try to watch ads.",
             created_at=datetime.now(),
-            country="US",
+            country="USA",
             platform="app_store"
         )
     ]
@@ -164,8 +166,15 @@ def main():
     print("2. 지식베이스 강제 업데이트 (느림, API 비용 발생)")
     print("3. 통계 조회")
     print("4. 캐시 초기화")
+    print("5. App Store Connect API 테스트")
+    print("6. 실제 App Store 리뷰 가져오기 및 응답")
+    print("7. 샘플 리뷰 테스트")
+    print("8. 실제 Google Play 리뷰 가져오기 및 응답")
+    print("9. 두 스토어 시범 처리 (각 10개)")
+    print("10. CSV 기반 리뷰 처리")
+    print("11. Google Play API 쿼터 확인")
     
-    choice = input("\n선택 (1-4): ").strip()
+    choice = input("\n선택 (1-11): ").strip()
     
     if choice == "1":
         # 기존 지식베이스 사용
@@ -189,9 +198,161 @@ def main():
         # 캐시 초기화
         bot.clear_cache()
         return
+    elif choice == "5":
+        # App Store API 테스트
+        test_app_store_connection()
+        return
+    elif choice == "6":
+        # 실제 App Store 리뷰 처리
+        process_real_app_store_reviews(bot)
+        return
+    elif choice == "7":
+        # 샘플 리뷰 테스트
+        process_sample_reviews(bot)
+        return
+    elif choice == "8":
+        # 실제 Google Play 리뷰 처리
+        process_real_google_play_reviews(bot)
+        return
+    elif choice == "9":
+        # 두 스토어 시범 처리
+        process_trial_both_stores(bot)
+        return
+    elif choice == "10":
+        # CSV 기반 리뷰 처리
+        from csv_review_processor import CSVReviewProcessor
+        csv_file = input("CSV 파일 경로를 입력하세요: ").strip()
+        if csv_file:
+            processor = CSVReviewProcessor()
+            result = processor.process_csv_reviews(csv_file)
+            if result['success']:
+                print(f"✅ 처리 완료: {result['processed']}개 성공, {result['failed']}개 실패")
+            else:
+                print(f"❌ 처리 실패: {result.get('reason', 'unknown')}")
+        return
+    elif choice == "11":
+        # Google Play API 쿼터 확인
+        check_google_play_quota()
+        return
     else:
         print("잘못된 선택입니다.")
         return
+
+def test_app_store_connection():
+    """App Store Connect API 연결 테스트"""
+    print("\n🔗 App Store Connect API 연결 테스트...")
+    
+    try:
+        client = AppStoreConnectClient()
+        if client.test_connection():
+            print("\n✅ API 연결 성공!")
+            
+            # 지원 국가별 앱 정보 확인
+            for country in ["KOR", "USA", "JPN"]:
+                try:
+                    app_id = client.get_app_id(country)
+                    print(f"   {country} 앱 ID: {app_id}")
+                except Exception as e:
+                    print(f"   {country} 앱 ID 조회 실패: {e}")
+        
+    except Exception as e:
+        print(f"\n❌ API 연결 실패: {e}")
+        print("\n다음 사항을 확인해주세요:")
+        print("1. .p8 키 파일이 올바른 위치에 있는지 확인")
+        print("2. .env 파일에 APP_STORE_KEY_ID, APP_STORE_ISSUER_ID가 설정되어 있는지 확인")
+        print("3. Bundle ID가 올바른지 확인")
+
+def process_real_app_store_reviews(bot: ReviewBot):
+    """실제 App Store 리뷰 처리"""
+    print("\n📱 실제 App Store 리뷰 처리...")
+    
+    try:
+        # 지식베이스 초기화
+        bot.initialize_knowledge_base(force_update=False)
+        
+        # App Store 클라이언트 초기화
+        client = AppStoreConnectClient()
+        
+        # 국가 선택
+        print("\n국가를 선택해주세요:")
+        print("1. 한국 (KOR)")
+        print("2. 미국 (USA)")
+        print("3. 일본 (JPN)")
+        
+        country_choice = input("선택 (1-3): ").strip()
+        if country_choice == "1":
+            country = "KOR"
+        elif country_choice == "2":
+            country = "USA"
+        elif country_choice == "3":
+            country = "JPN"
+        else:
+            country = "KOR"  # 기본값
+        
+        # 리뷰 수 입력
+        try:
+            review_count = int(input(f"\n가져올 리뷰 수 (기본값: 10): ").strip() or "10")
+        except ValueError:
+            review_count = 10
+        
+        print(f"\n📥 {country}에서 최근 {review_count}개 리뷰 가져오는 중...")
+        
+        # 실제 리뷰 가져오기
+        reviews = client.get_reviews(country, limit=review_count)
+        
+        if not reviews:
+            print("❌ 가져온 리뷰가 없습니다.")
+            return
+        
+        print(f"✅ {len(reviews)}개 리뷰를 가져왔습니다.")
+        
+        # 응답 생성할지 선택
+        print("\n응답을 생성하시겠습니까?")
+        print("1. 응답만 생성 (게시하지 않음)")
+        print("2. 응답 생성 후 실제 게시")
+        
+        action_choice = input("선택 (1-2): ").strip()
+        
+        # 응답 생성
+        print(f"\n🤖 {len(reviews)}개 리뷰에 대한 응답 생성 중...")
+        responses = bot.process_reviews_batch(reviews)
+        
+        # 결과 출력
+        print("\n" + "=" * 50)
+        print("📋 처리 결과")
+        print("=" * 50)
+        
+        for i, (review, response) in enumerate(zip(reviews, responses), 1):
+            print(f"\n[{i}] 리뷰 ID: {review.id}")
+            print(f"📝 원본: {review.content[:100]}...")
+            print(f"⭐ 평점: {review.rating}")
+            print(f"🤖 응답: {response.response_text}")
+            print("-" * 40)
+        
+        # 실제 게시
+        if action_choice == "2":
+            print("\n📤 실제 App Store에 응답 게시 중...")
+            success_count = 0
+            
+            for review, response in zip(reviews, responses):
+                try:
+                    if client.post_review_response(review.id, response.response_text):
+                        success_count += 1
+                        print(f"✅ {review.id} 응답 게시 성공")
+                    else:
+                        print(f"❌ {review.id} 응답 게시 실패")
+                except Exception as e:
+                    print(f"❌ {review.id} 응답 게시 오류: {e}")
+            
+            print(f"\n🎉 총 {success_count}/{len(responses)}개 응답 게시 완료!")
+        
+    except Exception as e:
+        print(f"❌ 처리 중 오류 발생: {e}")
+
+def process_sample_reviews(bot: ReviewBot):
+    """샘플 리뷰 테스트 처리"""
+    # 지식베이스 초기화 (기존 코드와 동일)
+    bot.initialize_knowledge_base(force_update=False)
     
     # 샘플 리뷰 처리 테스트 (실제 케이스 반영)
     print("\n📝 실제 케이스 기반 샘플 리뷰 테스트...")
@@ -203,7 +364,7 @@ def main():
             content="광고보고 포인트 지급 안되는 횟수가 압도적으로 많고 5초짜리 광고라고 해놓고 대놓고 15초 이상 광고 보여줌.",
             author="김사용자",
             platform="google_play",
-            country="KR",
+            country="KOR",
             rating=1,
             created_at=datetime.now()
         ),
@@ -212,7 +373,7 @@ def main():
             content="수면모드로 전환버튼 눌러도 안 눌릴 때가 많고 아까 낮부터는 아예 잠자기 시작 버튼 자체가 안떠요.",
             author="이사용자",
             platform="app_store",
-            country="KR", 
+            country="KOR", 
             rating=2,
             created_at=datetime.now()
         ),
@@ -221,7 +382,7 @@ def main():
             content="현금45,000원 교환 포인트 원래 7만원대였는데 지금 8만포인트네요.",
             author="박사용자",
             platform="google_play",
-            country="KR",
+            country="KOR",
             rating=3,
             created_at=datetime.now()
         ),
@@ -230,7 +391,7 @@ def main():
             content="초대코드 입력하시면 1000포인트 줍니다",
             author="최사용자",
             platform="app_store", 
-            country="KR",
+            country="KOR",
             rating=5,
             created_at=datetime.now()
         ),
@@ -239,7 +400,7 @@ def main():
             content="문의했는데 답변이 없어요. 채널톡으로도 연락했는데 응답이 없습니다.",
             author="정사용자",
             platform="google_play", 
-            country="KR",
+            country="KOR",
             rating=1,
             created_at=datetime.now()
         ),
@@ -249,7 +410,7 @@ def main():
             content="I walk more than 10,000 steps each day. The app says I have walked less than 2,000.",
             author="Mare",
             platform="google_play",
-            country="US",
+            country="USA",
             rating=2,
             created_at=datetime.now()
         ),
@@ -258,7 +419,7 @@ def main():
             content="I have low vision and use voiceover... it's extremely frustrating for me right now.",
             author="Hali",
             platform="app_store",
-            country="US",
+            country="USA",
             rating=1,
             created_at=datetime.now()
         ),
@@ -267,7 +428,7 @@ def main():
             content="I ordered a gift card and I have not received it.",
             author="ET21000",
             platform="google_play",
-            country="US",
+            country="USA",
             rating=2,
             created_at=datetime.now()
         ),
@@ -276,7 +437,7 @@ def main():
             content="I used to get 500 points for steps, now only 100 after cashing out.",
             author="LaLob",
             platform="app_store",
-            country="US",
+            country="USA",
             rating=3,
             created_at=datetime.now()
         ),
@@ -285,8 +446,36 @@ def main():
             content="I contacted support through the app but haven't received any response. I also tried the chat but no one replied.",
             author="SarahJ",
             platform="google_play",
-            country="US",
+            country="USA",
             rating=1,
+            created_at=datetime.now()
+        ),
+        # 일본 케이스들
+        Review(
+            id="jp_ad_001",
+            content="広告を見てもポイントがもらえないことが多いです。5秒の広告と書いてあるのに15秒以上の広告が流れます。",
+            author="田中太郎",
+            platform="google_play",
+            country="JPN",
+            rating=2,
+            created_at=datetime.now()
+        ),
+        Review(
+            id="jp_point_001",
+            content="ポイントの交換レートが前より悪くなっているように感じます。改善してほしいです。",
+            author="佐藤花子",
+            platform="app_store",
+            country="JPN",
+            rating=3,
+            created_at=datetime.now()
+        ),
+        Review(
+            id="jp_positive_001",
+            content="毎日楽しく使わせていただいています！ポイントも貯まりやすくて嬉しいです。",
+            author="山田次郎",
+            platform="google_play",
+            country="JPN",
+            rating=5,
             created_at=datetime.now()
         )
     ]
@@ -318,6 +507,227 @@ def main():
     print(f"\n📊 벡터 저장소 상태: {vector_info}")
     
     print("\n🎉 테스트 완료! 실제 운영 시에는 API를 통해 리뷰를 수집하고 응답을 게시할 수 있습니다.")
+
+def check_google_play_quota():
+    """Google Play API POST 쿼터 확인"""
+    from csv_review_processor import CSVReviewProcessor
+    processor = CSVReviewProcessor()
+    quota_info = processor.check_daily_quota()
+    
+    print(f"\n📊 Google Play API 일일 쿼터 현황")
+    print("=" * 50)
+    print(f"🔹 사용: {quota_info['used']}/{quota_info['limit']} ({quota_info['percentage']:.1f}%)")
+    print(f"🔹 남음: {quota_info['remaining']}개")
+    
+    if quota_info['remaining'] <= 100:
+        print("⚠️ 쿼터가 부족합니다!")
+    elif quota_info['remaining'] <= 500:
+        print("⚠️ 쿼터 사용량에 주의하세요.")
+    else:
+        print("✅ 충분한 쿼터가 남아있습니다.")
+
+def process_real_google_play_reviews(bot: ReviewBot):
+    """실제 Google Play 리뷰 처리"""
+    print("\n📱 실제 Google Play 리뷰 처리...")
+    
+    try:
+        # 지식베이스 초기화
+        bot.initialize_knowledge_base(force_update=False)
+        
+        # Google Play 클라이언트 초기화
+        gp_client = GooglePlayConsoleClient()
+        
+        # 국가 선택
+        print("\n국가를 선택해주세요:")
+        print("1. 한국 (KOR)")
+        print("2. 미국 (USA)")
+        print("3. 일본 (JPN)")
+        
+        country_choice = input("선택 (1-3): ").strip()
+        if country_choice == "1":
+            country = "KOR"
+        elif country_choice == "2":
+            country = "USA"
+        elif country_choice == "3":
+            country = "JPN"
+        else:
+            country = "KOR"  # 기본값
+        
+        print(f"\n📥 {country} 최근 1주일 미답변 리뷰 전체 가져오는 중...")
+        
+        # 최근 1주일 미답변 리뷰 전체 가져오기 (국가별 언어 매칭)
+        reviews = gp_client.get_reviews(
+            country,
+            limit=2000,  # 충분히 큰 수로 설정하여 전체 가져오기
+            skip_replied=True,  # 답변된 리뷰는 제외
+            infer_country_from_text=True,
+            translation_language=None
+        )
+        
+        if not reviews:
+            print("❌ 가져온 리뷰가 없습니다.")
+            return
+        
+        print(f"✅ {len(reviews)}개 리뷰를 가져왔습니다.")
+        
+        # 응답 생성할지 선택
+        print("\n응답을 생성하시겠습니까?")
+        print("1. 응답만 생성 (게시하지 않음)")
+        print("2. 응답 생성 후 실제 게시")
+        
+        action_choice = input("선택 (1-2): ").strip()
+        
+        # 응답 생성
+        print(f"\n🤖 {len(reviews)}개 리뷰에 대한 응답 생성 중...")
+        responses = bot.process_reviews_batch(reviews)
+        
+        # 결과 출력
+        print("\n" + "=" * 50)
+        print("📋 처리 결과")
+        print("=" * 50)
+        
+        for i, (review, response) in enumerate(zip(reviews, responses), 1):
+            print(f"\n[{i}] 리뷰 ID: {review.id}")
+            print(f"📍 국가: {review.country} | 플랫폼: {review.platform}")
+            print(f"📝 원본: {review.content[:100]}...")
+            print(f"⭐ 평점: {review.rating}")
+            print(f"🤖 응답: {response.response_text}")
+            print("-" * 40)
+        
+        # 실제 게시
+        if action_choice == "2":
+            print("\n📤 실제 Google Play에 응답 게시 중...")
+            success_count = 0
+            
+            for review, response in zip(reviews, responses):
+                try:
+                    if gp_client.post_review_response(review.id, response.response_text, country):
+                        success_count += 1
+                        print(f"✅ {review.id} 응답 게시 성공")
+                    else:
+                        print(f"❌ {review.id} 응답 게시 실패")
+                except Exception as e:
+                    print(f"❌ {review.id} 응답 게시 오류: {e}")
+            
+            print(f"\n🎉 총 {success_count}/{len(responses)}개 응답 게시 완료!")
+        
+    except Exception as e:
+        print(f"❌ 처리 중 오류 발생: {e}")
+
+def process_trial_both_stores(bot: ReviewBot):
+    """두 스토어에서 각각 10개 시범 처리 (동일 국가 선택)"""
+    print("\n🧪 두 스토어 시범 처리 (각 10개)")
+    
+    try:
+        # 지식베이스 초기화
+        bot.initialize_knowledge_base(force_update=False)
+        
+        # 클라이언트 초기화
+        as_client = AppStoreConnectClient()
+        gp_client = GooglePlayConsoleClient()
+        
+        # 국가 선택
+        print("\n국가를 선택해주세요:")
+        print("1. 한국 (KOR)")
+        print("2. 미국 (USA)")
+        print("3. 일본 (JPN)")
+        
+        country_choice = input("선택 (1-3): ").strip()
+        if country_choice == "1":
+            country = "KOR"
+        elif country_choice == "2":
+            country = "USA"
+        elif country_choice == "3":
+            country = "JPN"
+        else:
+            country = "KOR"
+        
+        review_count = 10
+        print(f"\n📥 {country}에서 각 스토어별 최근 {review_count}개 리뷰 가져오는 중...")
+        
+        # 리뷰 수집
+        as_reviews = []
+        gp_reviews = []
+        try:
+            as_reviews = as_client.get_reviews(country, limit=review_count)
+        except Exception as e:
+            print(f"App Store 리뷰 조회 실패: {e}")
+        try:
+            gp_reviews = gp_client.get_reviews(country, limit=review_count, infer_country_from_text=True)
+        except Exception as e:
+            print(f"Google Play 리뷰 조회 실패: {e}")
+        
+        print(f"✅ App Store: {len(as_reviews)}개, Google Play: {len(gp_reviews)}개")
+        
+        # 응답 생성
+        if as_reviews:
+            print("\n🤖 App Store 응답 생성 중...")
+            as_responses = bot.process_reviews_batch(as_reviews)
+        else:
+            as_responses = []
+        if gp_reviews:
+            print("\n🤖 Google Play 응답 생성 중...")
+            gp_responses = bot.process_reviews_batch(gp_reviews)
+        else:
+            gp_responses = []
+        
+        # 결과 출력
+        def print_results(store_name, reviews, responses):
+            if not reviews:
+                print(f"\n{store_name}: 처리할 리뷰가 없습니다.")
+                return
+            print("\n" + "=" * 50)
+            print(f"📋 {store_name} 처리 결과")
+            print("=" * 50)
+            for i, (review, response) in enumerate(zip(reviews, responses), 1):
+                print(f"\n[{i}] 리뷰 ID: {review.id}")
+                print(f"📝 원본: {review.content[:100]}...")
+                print(f"⭐ 평점: {review.rating}")
+                print(f"🤖 응답: {response.response_text}")
+                print("-" * 40)
+        
+        print_results("App Store", as_reviews, as_responses)
+        print_results("Google Play", gp_reviews, gp_responses)
+        
+        # 게시 여부
+        print("\n응답을 실제로 게시하시겠습니까?")
+        print("1. 게시하지 않음 (미리보기만)")
+        print("2. 두 스토어 모두 게시")
+        action_choice = input("선택 (1-2): ").strip()
+        
+        if action_choice == "2":
+            # App Store 게시
+            if as_reviews and as_responses:
+                print("\n📤 App Store에 응답 게시 중...")
+                success_count = 0
+                for review, response in zip(as_reviews, as_responses):
+                    try:
+                        if as_client.post_review_response(review.id, response.response_text):
+                            success_count += 1
+                            print(f"✅ {review.id} 응답 게시 성공")
+                        else:
+                            print(f"❌ {review.id} 응답 게시 실패")
+                    except Exception as e:
+                        print(f"❌ {review.id} 응답 게시 오류: {e}")
+                print(f"🎉 App Store 게시 완료: {success_count}/{len(as_responses)}")
+            
+            # Google Play 게시
+            if gp_reviews and gp_responses:
+                print("\n📤 Google Play에 응답 게시 중...")
+                success_count = 0
+                for review, response in zip(gp_reviews, gp_responses):
+                    try:
+                        if gp_client.post_review_response(review.id, response.response_text, country):
+                            success_count += 1
+                            print(f"✅ {review.id} 응답 게시 성공")
+                        else:
+                            print(f"❌ {review.id} 응답 게시 실패")
+                    except Exception as e:
+                        print(f"❌ {review.id} 응답 게시 오류: {e}")
+                print(f"🎉 Google Play 게시 완료: {success_count}/{len(gp_responses)}")
+        
+    except Exception as e:
+        print(f"❌ 시범 처리 중 오류 발생: {e}")
 
 if __name__ == "__main__":
     main() 
