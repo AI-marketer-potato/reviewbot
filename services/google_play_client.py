@@ -105,7 +105,7 @@ class GooglePlayConsoleClient:
                     
                     reviewer_lang = user_comment.get('reviewerLanguage')
                     
-                    # 텍스트 기반 국가 추정 (옵션)
+                                        # 텍스트 기반 국가 추정 (옵션)
                     detected_country = None
                     if infer_country_from_text:
                         detected_country = detect_country_by_text(user_comment.get('text', ''), default=country)
@@ -113,25 +113,24 @@ class GooglePlayConsoleClient:
                     # reviewerLanguage를 우선 고려해서 국가 추정 보정
                     if infer_country_from_text and reviewer_lang:
                         lang_lower = reviewer_lang.lower()
-                        if lang_lower.startswith('ja'):
-                            detected_country = 'JPN'
-                        elif lang_lower.startswith('ko'):
-                            detected_country = 'KOR'
-                        elif lang_lower.startswith('en'):
-                            detected_country = 'USA'
-                    
-                    effective_country = detected_country or country
-                    
-                    # 선택한 국가에 맞는 언어의 리뷰만 필터링
-                    if country == "USA" and not (effective_country == "USA" or (reviewer_lang and reviewer_lang.lower().startswith('en'))):
-                        language_filtered += 1
-                        continue
-                    elif country == "KOR" and not (effective_country == "KOR" or (reviewer_lang and reviewer_lang.lower().startswith('ko'))):
-                        language_filtered += 1
-                        continue
-                    elif country == "JPN" and not (effective_country == "JPN" or (reviewer_lang and reviewer_lang.lower().startswith('ja'))):
-                        language_filtered += 1
-                        continue
+                    if lang_lower.startswith('ja'):
+                        detected_country = 'JPN'
+                    elif lang_lower.startswith('ko'):
+                        detected_country = 'KOR'
+                    elif lang_lower.startswith('en'):
+                        detected_country = 'USA'
+                
+                effective_country = detected_country or country
+                # 선택한 국가에 맞는 언어의 리뷰만 필터링
+                if country == "USA" and not (effective_country == "USA" or (reviewer_lang and reviewer_lang.lower().startswith('en'))):
+                    language_filtered += 1
+                    continue
+                elif country == "KOR" and not (effective_country == "KOR" or (reviewer_lang and reviewer_lang.lower().startswith('ko'))):
+                    language_filtered += 1
+                    continue
+                elif country == "JPN" and not (effective_country == "JPN" or (reviewer_lang and reviewer_lang.lower().startswith('ja'))):
+                    language_filtered += 1
+                    continue
                     
                     review = Review(
                         id=review_data.get('reviewId'),

@@ -109,6 +109,7 @@ class ResponseGenerator:
 - 한 문장이라도 사용자 리뷰를 요약하거나 리뷰 키워드를 반영
 - {max_length}자 이내로 간결하게 작성
 - 광고 많음/오류, 포인트 미지급, 성능 문제, 포지티브 리뷰에 대해 적절한 해결 방식과 톤을 구분할 것
+- **볼드 텍스트 금지**: App Store는 **볼드** 마크다운을 지원하지 않으므로 일반 텍스트만 사용
 
 참고 지식베이스:
 {knowledge_context}"""),
@@ -195,6 +196,7 @@ class ResponseGenerator:
 3. Always include "FAQ" and "in-app Help Center" guidance
 4. Keep responses 100-200 characters for better engagement
 5. Vary language - avoid repetitive phrasing across responses
+6. **NO BOLD TEXT**: App Store doesn't support **bold** markdown - use plain text only
 
 Knowledge base for reference:
 {knowledge_context}"""),
@@ -325,6 +327,10 @@ Please write a natural and helpful English response to the above review.""")
             
             response_text = result.content.strip()
             
+            # App Store에서 볼드 마크다운 제거 (App Store는 마크다운 지원 안 함)
+            if review.platform == "app_store":
+                response_text = self._remove_markdown_formatting(response_text)
+            
             # 길이 제한 확인 및 조정
             if len(response_text) > max_length:
                 response_text = self._truncate_response(response_text, max_length)
@@ -345,6 +351,24 @@ Please write a natural and helpful English response to the above review.""")
             print(f"응답 생성 오류: {e}")
             # 기본 응답 반환
             return self._generate_fallback_response(review, category)
+    
+    def _remove_markdown_formatting(self, text: str) -> str:
+        """마크다운 포맷팅 제거 (App Store용)"""
+        import re
+        
+        # **텍스트** → 텍스트 (볼드 제거)
+        text = re.sub(r'\*\*(.*?)\*\*', r'\1', text)
+        
+        # *텍스트* → 텍스트 (이탤릭 제거)
+        text = re.sub(r'\*(.*?)\*', r'\1', text)
+        
+        # [텍스트](링크) → 텍스트 (링크 제거)
+        text = re.sub(r'\[(.*?)\]\(.*?\)', r'\1', text)
+        
+        # `텍스트` → 텍스트 (코드 제거)
+        text = re.sub(r'`(.*?)`', r'\1', text)
+        
+        return text
     
     def _process_author_name(self, author: str) -> str:
         """작성자명 처리 (길거나 부적절한 이름 필터링)"""

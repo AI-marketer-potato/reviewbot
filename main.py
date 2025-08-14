@@ -169,7 +169,7 @@ def main():
     print("5. App Store Connect API 테스트")
     print("6. 실제 App Store 리뷰 가져오기 및 응답")
     print("7. 샘플 리뷰 테스트")
-    print("8. 실제 Google Play 리뷰 가져오기 및 응답")
+    print("8. 실제 Google Play 리뷰 처리 (전체 국가)")
     print("9. 두 스토어 시범 처리 (각 10개)")
     print("10. CSV 기반 리뷰 처리")
     print("11. Google Play API 쿼터 확인")
@@ -221,10 +221,18 @@ def main():
     elif choice == "10":
         # CSV 기반 리뷰 처리
         from csv_review_processor import CSVReviewProcessor
-        csv_file = input("CSV 파일 경로를 입력하세요: ").strip()
+        csv_file = input("CSV 파일 경로를 입력하세요: ").strip().strip("'").strip('"')
         if csv_file:
+            # 샘플 모드 선택
+            print("\n처리 모드를 선택하세요:")
+            print("1. 샘플 처리 (10개)")
+            print("2. 전체 처리")
+            mode_choice = input("선택 (1-2): ").strip()
+            
             processor = CSVReviewProcessor()
-            result = processor.process_csv_reviews(csv_file)
+            sample_count = 10 if mode_choice == "1" else None
+            
+            result = processor.process_csv_reviews(csv_file, sample_count=sample_count)
             if result['success']:
                 print(f"✅ 처리 완료: {result['processed']}개 성공, {result['failed']}개 실패")
             else:
@@ -527,48 +535,66 @@ def check_google_play_quota():
         print("✅ 충분한 쿼터가 남아있습니다.")
 
 def process_real_google_play_reviews(bot: ReviewBot):
-    """실제 Google Play 리뷰 처리"""
-    print("\n📱 실제 Google Play 리뷰 처리...")
+    """실제 Google Play 리뷰 처리 - 모든 국가 통합"""
+    print("\n📱 실제 Google Play 리뷰 처리 (전체 국가)...")
     
     try:
+        from csv_review_processor import CSVReviewProcessor
+        
         # 지식베이스 초기화
         bot.initialize_knowledge_base(force_update=False)
+        
+        # 쿼터 확인
+        processor = CSVReviewProcessor()
+        quota_info = processor.check_daily_quota()
+        print(f"\n📊 Google Play API 쿼터: {quota_info['used']}/{quota_info['limit']} ({quota_info['percentage']:.1f}%)")
+        
+        if quota_info['remaining'] <= 0:
+            print("❌ 일일 POST 쿼터 초과! 내일 다시 시도하세요.")
+            return
         
         # Google Play 클라이언트 초기화
         gp_client = GooglePlayConsoleClient()
         
-        # 국가 선택
-        print("\n국가를 선택해주세요:")
-        print("1. 한국 (KOR)")
-        print("2. 미국 (USA)")
-        print("3. 일본 (JPN)")
+        print(f"\n📥 모든 국가 최근 1주일 미답변 리뷰 전체 가져오는 중...")
         
-        country_choice = input("선택 (1-3): ").strip()
-        if country_choice == "1":
-            country = "KOR"
-        elif country_choice == "2":
-            country = "USA"
-        elif country_choice == "3":
-            country = "JPN"
-        else:
-            country = "KOR"  # 기본값
+        # 모든 국가의 리뷰를 한 번에 가져오기
+        all_reviews = []
+        countries = ["KOR", "USA", "JPN"]
         
-        print(f"\n📥 {country} 최근 1주일 미답변 리뷰 전체 가져오는 중...")
-        
-        # 최근 1주일 미답변 리뷰 전체 가져오기 (국가별 언어 매칭)
-        reviews = gp_client.get_reviews(
-            country,
-            limit=2000,  # 충분히 큰 수로 설정하여 전체 가져오기
-            skip_replied=True,  # 답변된 리뷰는 제외
-            infer_country_from_text=True,
-            translation_language=None
-        )
+        for country in countries:
+            print(f"\n🌍 {country} 리뷰 수집 중...")
+            country_reviews = gp_client.get_reviews(
+                country,
+                limit=2000,  # 충분히 큰 수로 설정하여 전체 가져오기
+                skip_replied=True,  # 답변된 리뷰는 제외
+                infer_country_from_text=True,
+                translation_language=None
+            )
+            all_reviews.extend(country_reviews)
+            print(f"✅ {country}: {len(country_reviews)}개 리뷰 수집")
+            
+        reviews = all_reviews
         
         if not reviews:
             print("❌ 가져온 리뷰가 없습니다.")
             return
         
-        print(f"✅ {len(reviews)}개 리뷰를 가져왔습니다.")
+        print(f"\n📊 전체 수집 결과:")
+        print(f"✅ 총 {len(reviews)}개 미답변 리뷰 수집 완료")
+        
+        # 국가별 통계
+        country_stats = {}
+        for review in reviews:
+            country_stats[review.country] = country_stats.get(review.country, 0) + 1
+        
+        for country, count in country_stats.items():
+            print(f"   - {country}: {count}개")
+        
+        # 쿼터 제한 확인
+        available_quota = quota_info['remaining']
+        if len(reviews) > available_quota:
+            print(f"⚠️ 쿼터 제한으로 {available_quota}개만 처리 가능합니다.")
         
         # 응답 생성할지 선택
         print("\n응답을 생성하시겠습니까?")
@@ -598,11 +624,19 @@ def process_real_google_play_reviews(bot: ReviewBot):
         if action_choice == "2":
             print("\n📤 실제 Google Play에 응답 게시 중...")
             success_count = 0
+            remaining_quota = quota_info['remaining']
             
-            for review, response in zip(reviews, responses):
+            for i, (review, response) in enumerate(zip(reviews, responses)):
+                if i >= remaining_quota:
+                    print(f"⚠️ 일일 쿼터 제한으로 {i}개만 처리됩니다.")
+                    break
+                    
                 try:
-                    if gp_client.post_review_response(review.id, response.response_text, country):
+                    # 국가별로 다른 처리 (각 리뷰의 country 속성 사용)
+                    success = gp_client.post_review_response(review.id, response.response_text, review.country)
+                    if success:
                         success_count += 1
+                        processor.update_quota_tracker(review.id)
                         print(f"✅ {review.id} 응답 게시 성공")
                     else:
                         print(f"❌ {review.id} 응답 게시 실패")
@@ -610,6 +644,7 @@ def process_real_google_play_reviews(bot: ReviewBot):
                     print(f"❌ {review.id} 응답 게시 오류: {e}")
             
             print(f"\n🎉 총 {success_count}/{len(responses)}개 응답 게시 완료!")
+            print(f"📊 남은 쿼터: {quota_info['remaining'] - success_count}/{quota_info['limit']}")
         
     except Exception as e:
         print(f"❌ 처리 중 오류 발생: {e}")

@@ -30,11 +30,37 @@ class CSVReviewProcessor:
     def load_csv_reviews(self, csv_path: str) -> List[Review]:
         """CSV 파일에서 리뷰 로드"""
         try:
-            df = pd.read_csv(csv_path)
-            print(f"📁 CSV 파일 로드: {len(df)}개 리뷰")
+            # 경로에서 따옴표 제거
+            csv_path = csv_path.strip().strip("'").strip('"')
             
-            # CSV 컬럼 확인
-            required_columns = ['Review ID', 'Reviewer Name', 'Star Rating', 'Review Text']
+            # Google Play Console CSV는 UTF-16 인코딩 사용
+            try:
+                df = pd.read_csv(csv_path, encoding='utf-16')
+            except UnicodeError:
+                # UTF-16 실패 시 다른 인코딩 시도
+                encodings = ['utf-8', 'cp1252', 'iso-8859-1']
+                df = None
+                for encoding in encodings:
+                    try:
+                        df = pd.read_csv(csv_path, encoding=encoding)
+                        break
+                    except:
+                        continue
+                if df is None:
+                    raise Exception("지원되는 인코딩을 찾을 수 없습니다.")
+            
+            print(f"📁 CSV 파일 로드: {len(df)}개 전체 평가 (별점 + 텍스트)")
+            
+            # 텍스트가 있는 리뷰만 계산
+            has_text_count = (df['Review Text'].notna() & (df['Review Text'].astype(str).str.strip() != '')).sum()
+            star_only_count = len(df) - has_text_count
+            
+            print(f"📊 평가 구분:")
+            print(f"   ⭐ 별점만: {star_only_count}개 (답변 불가)")
+            print(f"   📝 텍스트 포함: {has_text_count}개 (답변 가능)")
+            
+            # Google Play Console 실제 컬럼 확인
+            required_columns = ['Star Rating', 'Review Text', 'Review Link']
             missing_columns = [col for col in required_columns if col not in df.columns]
             
             if missing_columns:
@@ -43,18 +69,32 @@ class CSVReviewProcessor:
                 return []
             
             reviews = []
+            skipped_count = 0
+            no_text_count = 0
             for _, row in df.iterrows():
+                # 리뷰 텍스트가 없는 경우 건너뛰기 (별점만 있는 리뷰)
+                if pd.isna(row['Review Text']) or not str(row['Review Text']).strip():
+                    no_text_count += 1
+                    continue
+                    
                 # 이미 답변이 있는 리뷰는 건너뛰기
-                if pd.notna(row.get('Developer Reply Text', '')):
+                if pd.notna(row.get('Developer Reply Text', '')) and str(row.get('Developer Reply Text', '')).strip():
+                    skipped_count += 1
                     continue
                 
+                # Review ID는 Review Link에서 추출
+                review_link = str(row['Review Link'])
+                review_id = self._extract_review_id_from_link(review_link)
+                
+                # 리뷰 텍스트
+                review_text = str(row['Review Text']).strip()
+                
                 # 국가/언어 추정
-                review_text = str(row['Review Text'])
                 country = self._detect_country_from_text(review_text, row)
                 
                 review = Review(
-                    id=str(row['Review ID']),
-                    author=str(row['Reviewer Name']) if pd.notna(row['Reviewer Name']) else '익명',
+                    id=review_id,
+                    author='익명',  # Google Play Console CSV에는 리뷰어명이 없음
                     rating=int(row['Star Rating']) if pd.notna(row['Star Rating']) else 5,
                     content=review_text,
                     created_at=self._parse_date(row.get('Review Submit Date and Time', '')),
@@ -64,18 +104,37 @@ class CSVReviewProcessor:
                 )
                 reviews.append(review)
             
-            print(f"✅ 미답변 리뷰 {len(reviews)}개 로드 완료")
+            print(f"\n📋 처리 결과:")
+            print(f"   📝 텍스트 있는 리뷰: {no_text_count + len(reviews) + skipped_count}개")
+            print(f"   💬 이미 답변된 리뷰: {skipped_count}개")
+            print(f"   🎯 미답변 리뷰: {len(reviews)}개")
+            print(f"   ⭐ 별점만 있는 리뷰: {no_text_count}개 (제외)")
+            print(f"\n✅ 처리 대상: {len(reviews)}개 미답변 리뷰")
             return reviews
             
         except Exception as e:
             print(f"❌ CSV 로드 실패: {e}")
             return []
     
+    def _extract_review_id_from_link(self, review_link: str) -> str:
+        """Review Link에서 Review ID 추출"""
+        try:
+            # URL 예시: http://play.google.com/console/developers/.../reviewId=36aaf342-39f6-41bc-9a6f-8e7c22aa5a26&...
+            if 'reviewId=' in review_link:
+                review_id = review_link.split('reviewId=')[1].split('&')[0]
+                return review_id
+            else:
+                # reviewId가 없으면 링크 자체를 ID로 사용 (최후 수단)
+                return review_link.split('/')[-1] if '/' in review_link else review_link
+        except Exception:
+            # 추출 실패 시 링크 자체를 ID로 사용
+            return review_link
+    
     def _detect_country_from_text(self, text: str, row: pd.Series) -> str:
         """텍스트 기반 국가 추정"""
-        # App Language 컬럼이 있다면 활용
-        if 'App Language' in row.index and pd.notna(row['App Language']):
-            lang = str(row['App Language']).lower()
+        # Reviewer Language 컬럼이 있다면 활용
+        if 'Reviewer Language' in row.index and pd.notna(row['Reviewer Language']):
+            lang = str(row['Reviewer Language']).lower()
             if lang.startswith('ko'):
                 return 'KOR'
             elif lang.startswith('ja'):
@@ -179,7 +238,7 @@ class CSVReviewProcessor:
         except Exception as e:
             print(f"⚠️ 쿼터 트래커 업데이트 실패: {e}")
     
-    def process_csv_reviews(self, csv_path: str, batch_size: int = 50) -> Dict:
+    def process_csv_reviews(self, csv_path: str, batch_size: int = 50, sample_count: int = None) -> Dict:
         """CSV 리뷰 일괄 처리"""
         print(f"\n🔄 CSV 리뷰 처리 시작: {csv_path}")
         
@@ -206,7 +265,12 @@ class CSVReviewProcessor:
             print("✅ 모든 리뷰가 이미 처리되었습니다.")
             return {'success': True, 'processed': 0, 'skipped': len(reviews)}
         
-        print(f"🎯 처리 대상: {len(unprocessed_reviews)}개 리뷰")
+        # 샘플 모드인 경우 개수 제한
+        if sample_count and sample_count > 0:
+            unprocessed_reviews = unprocessed_reviews[:sample_count]
+            print(f"🧪 샘플 모드: {len(unprocessed_reviews)}개 리뷰만 처리")
+        else:
+            print(f"🎯 처리 대상: {len(unprocessed_reviews)}개 리뷰")
         
         # 쿼터 제한 적용
         available_quota = quota_info['remaining']
@@ -228,7 +292,7 @@ class CSVReviewProcessor:
                 try:
                     # 응답 생성
                     print(f"🤖 응답 생성 중: {review.id}")
-                    category = self.bot.classifier.classify_review(review.content, review.country)
+                    category = self.bot.review_classifier.classify_review(review)
                     response = self.bot.response_generator.generate_response(review, category)
                     
                     # API로 응답 등록
@@ -301,6 +365,7 @@ def main():
     parser = argparse.ArgumentParser(description="CSV 기반 Google Play 리뷰 응답 처리")
     parser.add_argument("csv_file", help="처리할 CSV 파일 경로")
     parser.add_argument("--batch-size", type=int, default=50, help="배치 크기 (기본값: 50)")
+    parser.add_argument("--sample", type=int, help="샘플 모드: 지정된 개수만 처리")
     parser.add_argument("--check-quota", action="store_true", help="쿼터만 확인하고 종료")
     
     args = parser.parse_args()
@@ -318,7 +383,7 @@ def main():
         print(f"❌ 파일을 찾을 수 없습니다: {args.csv_file}")
         return
     
-    result = processor.process_csv_reviews(args.csv_file, args.batch_size)
+    result = processor.process_csv_reviews(args.csv_file, args.batch_size, args.sample)
     
     if result['success']:
         print(f"\n✨ 전체 작업 완료")
