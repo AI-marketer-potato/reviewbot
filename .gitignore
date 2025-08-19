@@ -54,7 +54,7 @@ vector_stores/
 
 # 테스트 파일
 test_*.py
-*_test.py
+*_test.py 
 
 # 민감한 API 키 파일들
 *.p8

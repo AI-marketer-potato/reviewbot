@@ -105,7 +105,7 @@ class GooglePlayConsoleClient:
                     
                     reviewer_lang = user_comment.get('reviewerLanguage')
                     
-                    # 텍스트 기반 국가 추정 (옵션)
+                                        # 텍스트 기반 국가 추정 (옵션)
                     detected_country = None
                     if infer_country_from_text:
                         detected_country = detect_country_by_text(user_comment.get('text', ''), default=country)
@@ -120,46 +120,45 @@ class GooglePlayConsoleClient:
                         elif lang_lower.startswith('en'):
                             detected_country = 'USA'
                 
-                    effective_country = detected_country or country
-                    # 선택한 국가에 맞는 언어의 리뷰만 필터링
-                    if country == "USA" and not (effective_country == "USA" or (reviewer_lang and reviewer_lang.lower().startswith('en'))):
-                        language_filtered += 1
-                        continue
-                    elif country == "KOR" and not (effective_country == "KOR" or (reviewer_lang and reviewer_lang.lower().startswith('ko'))):
-                        language_filtered += 1
-                        continue
-                    elif country == "JPN" and not (effective_country == "JPN" or (reviewer_lang and reviewer_lang.lower().startswith('ja'))):
-                        language_filtered += 1
-                        continue
+                effective_country = detected_country or country
+                # 선택한 국가에 맞는 언어의 리뷰만 필터링
+                if country == "USA" and not (effective_country == "USA" or (reviewer_lang and reviewer_lang.lower().startswith('en'))):
+                    language_filtered += 1
+                    continue
+                elif country == "KOR" and not (effective_country == "KOR" or (reviewer_lang and reviewer_lang.lower().startswith('ko'))):
+                    language_filtered += 1
+                    continue
+                elif country == "JPN" and not (effective_country == "JPN" or (reviewer_lang and reviewer_lang.lower().startswith('ja'))):
+                    language_filtered += 1
+                    continue
                     
-                    review = Review(
-                        id=review_data.get('reviewId'),
-                        author=review_data.get('authorName', '익명'),
-                        rating=user_comment.get('starRating', 0),
-                        content=user_comment.get('text', ''),
-                        created_at=datetime.fromtimestamp(
-                            int(user_comment.get('lastModified', {}).get('seconds', 0))
-                        ) if user_comment.get('lastModified') else datetime.now(),
-                        country=effective_country,
-                        platform="google_play",
-                        language=reviewer_lang
-                    )
-                    collected.append(review)
-                    
-                    if len(collected) >= limit:
-                        break
+                review = Review(
+                    id=review_data.get('reviewId'),
+                    author=review_data.get('authorName', '익명'),
+                    rating=user_comment.get('starRating', 0),
+                    content=user_comment.get('text', ''),
+                    created_at=datetime.fromtimestamp(
+                        int(user_comment.get('lastModified', {}).get('seconds', 0))
+                    ) if user_comment.get('lastModified') else datetime.now(),
+                    country=effective_country,
+                    platform="google_play",
+                    language=reviewer_lang
+                )
+                collected.append(review)
                 
-                # 다음 페이지 토큰 갱신 (while 루프 내부)
+                if len(collected) >= limit:
+                    break
+                
+                # 다음 페이지 토큰 (for 루프 밖, while 루프 안)
                 token = None
                 token_pagination = result.get('tokenPagination', {})
                 if isinstance(token_pagination, dict):
                     token = token_pagination.get('nextPageToken')
                 
-                # 다음 페이지 없으면 종료
                 if not token:
                     break
             
-            # 디버깅 정보 출력 (루프 종료 후 1회)
+            # 디버깅 정보 출력
             print(f"📊 Google Play 리뷰 수집 통계:")
             print(f"   - 조회한 페이지: {pages_fetched}개")
             print(f"   - 전체 조회된 리뷰: {total_fetched}개")

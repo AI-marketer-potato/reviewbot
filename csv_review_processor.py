@@ -285,33 +285,67 @@ class CSVReviewProcessor:
         # 배치 처리
         for i in range(0, process_count, batch_size):
             batch = unprocessed_reviews[i:i+batch_size]
+            batch_index = i // batch_size + 1
             
-            print(f"\n📦 배치 {i//batch_size + 1} 처리 중... ({len(batch)}개)")
+            print(f"\n📦 배치 {batch_index} 처리 중... ({len(batch)}개)")
             
+            # 1) 생성 단계: 응답 생성만 수행하고 모아두기
+            batch_responses = []
             for review in batch:
                 try:
-                    # 응답 생성
                     print(f"🤖 응답 생성 중: {review.id}")
                     category = self.bot.review_classifier.classify_review(review)
                     response = self.bot.response_generator.generate_response(review, category)
-                    
-                    # API로 응답 등록
-                    success = self.post_review_response(review.id, response.response_text)
-                    
+                    batch_responses.append({
+                        'review_id': review.id,
+                        'category': category,
+                        'response_text': response.response_text
+                    })
+                    # 생성 단계에서는 잠시 대기 (과도한 LLM 호출 방지)
+                    time.sleep(0.2)
+                except Exception as e:
+                    print(f"❌ 생성 오류 ({review.id}): {e}")
+                    failed_count += 1
+            
+            # 배치 CSV로 저장
+            try:
+                ts = datetime.now().strftime('%Y%m%d_%H%M%S')
+                out_dir = Path('outputs')
+                out_dir.mkdir(parents=True, exist_ok=True)
+                out_path = out_dir / f"responses_{ts}_batch{batch_index}.csv"
+                pd.DataFrame(batch_responses).to_csv(out_path, index=False, encoding='utf-8-sig')
+                print(f"📝 배치 {batch_index} 응답 CSV 저장: {out_path}")
+            except Exception as e:
+                print(f"⚠️ 배치 CSV 저장 실패: {e}")
+            
+            # 2) 게시 단계: 생성된 응답을 실제 API로 게시
+            for item in batch_responses:
+                try:
+                    success = self.post_review_response(item['review_id'], item['response_text'])
                     if success:
-                        print(f"✅ 성공: {review.id}")
-                        self.update_quota_tracker(review.id)
+                        print(f"✅ 게시 성공: {item['review_id']}")
+                        self.update_quota_tracker(item['review_id'])
                         success_count += 1
                     else:
-                        print(f"❌ 실패: {review.id}")
+                        print(f"❌ 게시 실패: {item['review_id']}")
                         failed_count += 1
                     
                     # API 제한 고려하여 잠시 대기
                     time.sleep(0.5)
                     
+                    # 배치 중간에도 쿼터 초과 시 중단
+                    if self.daily_post_count >= self.daily_limit:
+                        print("⛔ 일일 쿼터 한도 도달. 작업을 중단합니다.")
+                        break
                 except Exception as e:
-                    print(f"❌ 오류 ({review.id}): {e}")
+                    print(f"❌ 게시 오류 ({item['review_id']}): {e}")
                     failed_count += 1
+            
+            # 쿼터 검사 후 다음 배치 진행 여부 결정
+            remaining_after_batch = self.daily_limit - self.daily_post_count
+            if remaining_after_batch <= 0:
+                print("⛔ 일일 쿼터 한도 도달. 더 이상 배치를 진행하지 않습니다.")
+                break
             
             # 배치 간 대기
             if i + batch_size < process_count:

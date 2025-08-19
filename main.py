@@ -565,12 +565,12 @@ def process_real_google_play_reviews(bot: ReviewBot):
         for country in countries:
             print(f"\n🌍 {country} 리뷰 수집 중...")
             country_reviews = gp_client.get_reviews(
-                country,
+            country,
                 limit=2000,  # 충분히 큰 수로 설정하여 전체 가져오기
                 skip_replied=True,  # 답변된 리뷰는 제외
-                infer_country_from_text=True,
-                translation_language=None
-            )
+            infer_country_from_text=True,
+            translation_language=None
+        )
             all_reviews.extend(country_reviews)
             print(f"✅ {country}: {len(country_reviews)}개 리뷰 수집")
             
