@@ -296,6 +296,9 @@ class CSVReviewProcessor:
                     print(f"🤖 응답 생성 중: {review.id}")
                     category = self.bot.review_classifier.classify_review(review)
                     response = self.bot.response_generator.generate_response(review, category)
+                    if response is None:
+                        print(f"⚠️ 비꼬는 리뷰 스킵: {review.id}")
+                        continue
                     batch_responses.append({
                         'review_id': review.id,
                         'category': category,

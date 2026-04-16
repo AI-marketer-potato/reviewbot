@@ -33,6 +33,10 @@ class ReviewBot:
 
         response = self.response_generator.generate_response(review)
 
+        if response is None:
+            logger.info(f"응답 스킵 (비꼬는 리뷰): {review.id}")
+            return None
+
         self.response_cache[cache_key] = response.dict()
         self._save_cache()
 
@@ -46,7 +50,9 @@ class ReviewBot:
         for i, review in enumerate(reviews, 1):
             logger.info(f"처리 중: {i}/{total} - {review.id}")
             try:
-                responses.append(self.process_review(review))
+                result = self.process_review(review)
+                if result is not None:
+                    responses.append(result)
             except Exception as e:
                 logger.error(f"리뷰 처리 오류 {review.id}: {e}")
 

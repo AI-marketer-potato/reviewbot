@@ -16,6 +16,26 @@ class ResponseGenerator:
 
     PERSONAS = ["다니엘", "제리"]
 
+    SHORT_REVIEW_RESPONSES = [
+        "좋은 리뷰 남겨주셔서 감사합니다! 앞으로도 좋은 만남을 이어갈 수 있도록 노력하겠습니다.",
+        "리뷰 남겨주셔서 감사합니다! 더 좋은 인연을 만들어갈 수 있도록 최선을 다하겠습니다.",
+        "소중한 리뷰 감사드립니다! 앞으로도 내친소와 함께 좋은 인연 만나시길 바랍니다.",
+        "응원해주셔서 감사합니다! 앞으로도 신뢰할 수 있는 소개팅 경험을 드리겠습니다.",
+        "리뷰 감사합니다! 좋은 만남이 이어지길 응원합니다.",
+        "좋은 평가 감사합니다! 더 나은 서비스로 보답할 수 있도록 하겠습니다.",
+        "따뜻한 리뷰 감사합니다! 앞으로도 좋은 인연의 시작이 되도록 노력하겠습니다.",
+    ]
+
+    SHORT_REVIEW_KEYWORDS = {"좋아요", "굿", "추천", "드가자", "좋음", "최고", "굿굿", "별다섯개", "강추"}
+
+    # 5점인데 비꼬는/부정적 리뷰를 감지하는 키워드
+    SARCASM_KEYWORDS = {
+        "최악", "별로", "쓰레기", "삭제", "환불", "사기", "짜증", "불만", "실망",
+        "후회", "비추", "거지", "망", "쓸모없", "못쓰", "형편없", "개별로",
+        "돈아까", "돈 아까", "시간낭비", "시간 낭비", "아깝", "노답",
+        "그지같", "지우", "탈퇴", "개쓰레기", "헛소리",
+    }
+
     def __init__(self):
         self.llm = ChatOpenAI(
             model_name=Config.LLM_MODEL,
@@ -37,11 +57,6 @@ class ResponseGenerator:
 - 볼드 텍스트(**) 사용 금지
 - 200자 이내 간결하게 작성
 - 매번 다른 표현 사용 (같은 문장 반복 금지)
-
-**짧거나 내용이 없는 리뷰 처리:**
-- "좋아요", "굿", "추천", "드가자" 등 구체적 내용 없이 짧은 리뷰는 별도로 응답을 구성하지 말고
-  "안녕하세요, 내친소 운영 팀원 {persona}입니다. 좋은 리뷰 남겨주셔서 감사합니다! 앞으로도 좋은 만남을 이어갈 수 있도록 노력하겠습니다." 형태로 간단히 응답
-- 구체적 내용이 있는 리뷰만 내용을 반영하여 응답
 
 **감사 표현 예시 (다양하게 섞어서):**
 - "말씀해주신 부분이 팀에도 큰 힘이 됩니다"
@@ -72,8 +87,43 @@ class ResponseGenerator:
             ("human", "리뷰 내용: {review_content}"),
         ])
 
-    def generate_response(self, review: Review, category: str = "칭찬") -> ReviewResponse:
-        """긍정 리뷰 응답 생성"""
+    def _is_short_review(self, content: str) -> bool:
+        """짧고 내용 없는 리뷰인지 판별"""
+        stripped = content.strip().rstrip(".!~ㅋㅎ")
+        if len(stripped) <= 10 and any(kw in stripped for kw in self.SHORT_REVIEW_KEYWORDS):
+            return True
+        if len(stripped) <= 5:
+            return True
+        return False
+
+    def _is_sarcastic(self, content: str) -> bool:
+        """5점이지만 비꼬는/부정적 리뷰인지 판별"""
+        return any(kw in content for kw in self.SARCASM_KEYWORDS)
+
+    def generate_response(self, review: Review, category: str = "칭찬") -> ReviewResponse | None:
+        """긍정 리뷰 응답 생성. 비꼬는 리뷰는 None 반환."""
+        # 비꼬는 리뷰 스킵
+        if self._is_sarcastic(review.content):
+            logger.info(f"비꼬는 리뷰 스킵: {review.id} - {review.content[:30]}")
+            return None
+
+        # 짧은 리뷰는 고정 후보에서 랜덤 선택 (LLM 호출 안 함)
+        if self._is_short_review(review.content):
+            persona = random.choice(self.PERSONAS)
+            response_text = (
+                f"안녕하세요, 내친소 운영 팀원 {persona}입니다. "
+                f"{random.choice(self.SHORT_REVIEW_RESPONSES)}"
+            )
+            logger.info(f"짧은 리뷰 고정 응답: {review.id}")
+            return ReviewResponse(
+                review_id=review.id,
+                response_text=response_text,
+                generated_at=datetime.now(),
+                country=review.country,
+                platform=review.platform,
+                used_sources=[],
+            )
+
         try:
             persona = random.choice(self.PERSONAS)
             chain = self.prompt | self.llm
