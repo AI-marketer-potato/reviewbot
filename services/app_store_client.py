@@ -124,27 +124,48 @@ class AppStoreConnectClient:
         
         return response["data"][0]["id"]
     
-    def get_reviews(self, country: str, limit: int = 200) -> List[Review]:
-        """앱 리뷰 조회"""
+    def get_reviews(self, country: str, limit: int = 200, skip_replied: bool = True) -> List[Review]:
+        """앱 리뷰 조회. skip_replied=True면 미답변 리뷰만 반환."""
         app_id = self.get_app_id(country)
-        
+
+        # 답변 여부 확인을 위해 response 관계 포함
         params = {
             "filter[territory]": country,
             "sort": "-createdDate",
-            "limit": limit,
-            "fields[customerReviews]": "rating,title,body,createdDate,territory"
+            "limit": min(limit, 200),
+            "fields[customerReviews]": "rating,title,body,createdDate,territory,response",
+            "fields[customerReviewResponses]": "responseBody,state,lastModifiedDate",
+            "include": "response",
         }
-        
+
         endpoint = f"/v1/apps/{app_id}/customerReviews"
         response = self._make_request(endpoint, params=params)
-        
+
+        # 이미 답변된 리뷰 ID 수집
+        replied_ids = set()
+        if skip_replied:
+            for included in response.get("included", []):
+                if included.get("type") == "customerReviewResponses":
+                    rel = included.get("relationships", {})
+                    review_rel = rel.get("review", {}).get("data", {})
+                    if review_rel.get("id"):
+                        replied_ids.add(review_rel["id"])
+            # relationships에서도 확인
+            for review_data in response.get("data", []):
+                resp_rel = review_data.get("relationships", {}).get("response", {}).get("data")
+                if resp_rel is not None:
+                    replied_ids.add(review_data["id"])
+
         reviews = []
         for review_data in response.get("data", []):
+            if skip_replied and review_data["id"] in replied_ids:
+                continue
+
             attributes = review_data.get("attributes", {})
-            
+
             review = Review(
                 id=review_data["id"],
-                author="익명",  # App Store Connect에서는 작성자 정보 제공 안함
+                author="익명",
                 rating=attributes.get("rating", 0),
                 content=f"{attributes.get('title', '')} {attributes.get('body', '')}".strip(),
                 created_at=datetime.fromisoformat(attributes.get("createdDate", "").replace("Z", "+00:00")),
@@ -152,7 +173,7 @@ class AppStoreConnectClient:
                 platform="app_store"
             )
             reviews.append(review)
-        
+
         return reviews
     
     def post_review_response(self, review_id: str, response_text: str) -> bool:

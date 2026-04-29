@@ -77,7 +77,7 @@ def process_google_play_reviews(bot: ReviewBot):
 
         print("\n📥 한국 Google Play 미답변 리뷰 가져오는 중...")
         reviews = gp_client.get_reviews(
-            "KOR", limit=2000, skip_replied=True,
+            "KOR", limit=100, skip_replied=True,
             infer_country_from_text=True, translation_language=None,
         )
 
@@ -113,7 +113,7 @@ def process_app_store_reviews(bot: ReviewBot):
         as_client = AppStoreConnectClient()
 
         print("\n📥 한국 App Store 미답변 리뷰 가져오는 중...")
-        reviews = as_client.get_reviews("KOR", limit=50)
+        reviews = as_client.get_reviews("KOR", limit=100)
 
         if not reviews:
             print("❌ 가져온 리뷰가 없습니다.")

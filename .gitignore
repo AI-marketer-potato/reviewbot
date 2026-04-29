@@ -71,4 +71,13 @@ quota_tracker_*.json
 
 # 기타 민감한 파일들
 app_store_api_reproduction.py
-README_Apple_Support.md 
+README_Apple_Support.md
+
+# Node / 웹 프로젝트
+web/node_modules/
+web/.next/
+web/out/
+node_modules/
+
+# 빈 더미 파일
+/login
